@@ -17,7 +17,8 @@
 *.tmp
 *.class
 *plugin/gtype.state
-
+*po/*
+*Changelog*
 .deps
 .libs
 
