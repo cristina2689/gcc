@@ -1423,6 +1423,7 @@ OBJS = \
 	trans-mem.o \
 	tree-affine.o \
 	asan.o \
+	safe-stack.o \
 	tsan.o \
 	ubsan.o \
 	sanopt.o \
@@ -2396,6 +2397,7 @@ GTFILES = $(CPP_ID_DATA_H) $(srcdir)/input.h $(srcdir)/coretypes.h \
   $(srcdir)/ipa-inline.h \
   $(srcdir)/vtable-verify.c \
   $(srcdir)/asan.c \
+  $(srcdir)/safe-stack.c \
   $(srcdir)/ubsan.c \
   $(srcdir)/tsan.c \
   $(srcdir)/sanopt.c \

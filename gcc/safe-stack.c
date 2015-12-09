@@ -1,24 +1,3 @@
-/* AddressSanitizer, a fast memory error detector.
-   Copyright (C) 2012-2015 Free Software Foundation, Inc.
-   Contributed by Kostya Serebryany <kcc@google.com>
-
-This file is part of GCC.
-
-GCC is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free
-Software Foundation; either version 3, or (at your option) any later
-version.
-
-GCC is distributed in the hope that it will be useful, but WITHOUT ANY
-WARRANTY; without even the implied warranty of MERCHANTABILITY or
-FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
-for more details.
-
-You should have received a copy of the GNU General Public License
-along with GCC; see the file COPYING3.  If not see
-<http://www.gnu.org/licenses/>.  */
-
-
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
@@ -94,7 +73,7 @@ static unsigned int safestack_instrument ()
   int no_instr = 0;
 
   basic_block bb;
-  block_statement_iterator bi;
+  gimple_stmt_iterator bi;
 
   if (cfun) {
     FOR_EACH_BB_FN (bb, cfun) {
@@ -109,7 +88,8 @@ static unsigned int safestack_instrument ()
 /* Return true if we shoud apply this optimization */
 static bool gate_safestack (void)
 {
-  return true; /* Don't use true here if instrumentation function does a lot of stuff 
+  return flag_pass_safestack; 
+      /* Don't use true here if instrumentation function does a lot of stuff 
 		 since the opt might get run on every function and compilation might fail since
 		 some functions have limited resources 
 		*/
@@ -142,7 +122,7 @@ public:
   virtual bool gate (function *) { return gate_safestack (); }
   virtual unsigned int execute (function *) { return safestack_instrument (); }
 
-}; // class pass_asan
+};
 
 } // anon namespace
 
