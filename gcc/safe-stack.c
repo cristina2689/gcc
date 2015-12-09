@@ -94,7 +94,7 @@ static unsigned int safestack_instrument ()
   int no_instr = 0;
 
   basic_block bb;
-  block_statement_iterator bi;
+  gimple_stmt_iterator bi;
 
   if (cfun) {
     FOR_EACH_BB_FN (bb, cfun) {
@@ -109,7 +109,8 @@ static unsigned int safestack_instrument ()
 /* Return true if we shoud apply this optimization */
 static bool gate_safestack (void)
 {
-  return true; /* Don't use true here if instrumentation function does a lot of stuff 
+  return flag_pass_safestack; 
+      /* Don't use true here if instrumentation function does a lot of stuff 
 		 since the opt might get run on every function and compilation might fail since
 		 some functions have limited resources 
 		*/

@@ -1760,6 +1760,9 @@ common_handle_option (struct gcc_options *opts,
 	  &= ~(SANITIZE_UNDEFINED | SANITIZE_NONDEFAULT);
       break;
 
+    case OPT_fsafestack:
+      flag_pass_safestack = 1;
+      break;
     case OPT_O:
     case OPT_Os:
     case OPT_Ofast:
