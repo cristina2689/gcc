@@ -15,6 +15,8 @@
 *.o
 *.pyc
 *.tmp
+*.class
+*plugin/gtype.state
 
 .deps
 .libs
