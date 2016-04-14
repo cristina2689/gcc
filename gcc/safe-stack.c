@@ -72,9 +72,15 @@
 #include "tree-cfg.h"
 #include "tree-ssa-address.h"
 #include "print-tree.h"
-#include "gimple-ssa.h"
-#include "tree-ssa-propagate.h"
 #include "hash-map.h"
+#include "gimple-ssa.h"
+
+#include "tree-phinodes.h"
+#include "tree-ssa-propagate.h"
+#include "ssa-iterators.h"
+
+#include "tree-ssanames.h"
+#include "utils.h"
 
 /* Build mapping between arrays and pointers */
 hash_map<tree, tree> *references;
@@ -108,7 +114,7 @@ tree insert_pointer_for_array (tree array_size, tree array) {
   gsi_insert_before (&gsi, malloc_stmt, GSI_SAME_STMT);
 
 #if 0
-  /* Get location to set for the new stmt */
+  /* Get location to set for the new stmt - source code location apparently */
   gimple *stmt = gsi_stmt (gsi);
   location_t loc = gimple_location (stmt);
 
@@ -135,6 +141,7 @@ tree insert_pointer_for_array (tree array_size, tree array) {
   return fn_ptr;
 }
 
+/* Add array type nodes to hash_map */
 static void record_array_decl() {
   tree var;
   unsigned int i, nr = 0;
@@ -196,30 +203,19 @@ tree build_mem_ref_on_pointer (tree array, tree pointer) {
   return NULL_TREE;
 }
 
-tree find_array_ref (tree node) {
-
-  if (node && TREE_CODE (node) == ARRAY_REF) {
-    HOST_WIDE_INT bitpos, bitsize;
-    tree offset;
-    machine_mode mode;
-
-    int reversep, unsignedp, volatilep = 0;
-    return get_inner_reference (node, &bitsize, &bitpos, &offset, &mode,
-                                &unsignedp, &reversep, &volatilep, false);
-  }
-  return NULL_TREE;
-}
-
 bool replace_array_ref (gimple *stmt, tree node, unsigned int index) {
+  tree mem_ref;
+  tree *pointer;
 
   if (!node || index > 2 || !has_array_ref (node, stmt))
     return false;
-  tree *pointer = references->get (find_array_ref(node));
+
+  pointer = references->get (get_inner_ref(node));
   if (!pointer) {
     printf ("[replace_array_ref] Null pointer in map\n");
     return false;
   }
-  tree mem_ref = build_mem_ref_on_pointer (node, *pointer);
+  mem_ref = build_mem_ref_on_pointer (node, *pointer);
   if (index == 0)
     gimple_assign_set_lhs (stmt, mem_ref);
   if (index == 1)
@@ -238,13 +234,23 @@ static void safestack_instrument ()
   record_array_decl ();
   basic_block bb;
 
+  // Could be global
+  hash_set<tree> *safe_vars = new hash_set<tree>;
+  compute_safe_accesses(safe_vars);
+  check_reference_node ();
+  printf ("Number of presumably safe vars: %zd\n", safe_vars->elements());
+
+  check_non_ssa_var();
+  print_ssa_operands();
   FOR_ALL_BB_FN(bb, cfun) {
 
-    gimple_stmt_iterator gsi;
+   gimple_stmt_iterator gsi;
 
-    for (gsi = gsi_start_bb (bb); !gsi_end_p (gsi); gsi_next (&gsi)) {
+   for (gsi = gsi_start_bb (bb); !gsi_end_p (gsi); gsi_next (&gsi)) {
       gimple *stmt = gsi_stmt (gsi);
-
+      #if 0
+      test_ssa_iterators (stmt);
+      #endif
       switch (gimple_code(stmt)) {
         case GIMPLE_ASSIGN : {
               replace_array_ref (stmt, gimple_assign_lhs (stmt), 0);
@@ -278,7 +284,7 @@ static void safestack_instrument ()
               for (unsigned int i = 0; i < nargs; i++) {
                 tree node = gimple_call_arg (call, i);
                     if (node && TREE_CODE (node) == ARRAY_REF) {
-                      tree ref = find_array_ref (node);
+                      tree ref = get_inner_ref (node);
                       tree *pointer = references->get (ref);
                       if (!pointer) {
                         printf ("GIMPLE_CALL - null pointer in hash\n");
@@ -312,6 +318,7 @@ static void safestack_instrument ()
       }
     }
   }
+  delete safe_vars;
   delete references;
 }
 
