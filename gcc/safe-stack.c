@@ -84,6 +84,66 @@
 
 /* Build mapping between arrays and pointers */
 hash_map<tree, tree> *references;
+tree ustackptr, ssa_ustackptr;
+
+unsigned int compute_unsafe_stack_layout() {
+  unsigned int i, total = 0;
+  tree var;
+
+  FOR_EACH_LOCAL_DECL(cfun, i, var) {
+    total += tree_to_uhwi (DECL_SIZE_UNIT(var)); /* size in bytes */
+  }
+  return total;
+}
+
+tree allocate_unsafe_stack() {
+  basic_block bb = ENTRY_BLOCK_PTR_FOR_FN(cfun)->next_bb;
+  gimple_stmt_iterator gsi = gsi_start_bb (bb);
+
+  ustackptr = build_decl (DECL_SOURCE_LOCATION(current_function_decl),
+                             VAR_DECL, get_identifier ("ustackptr"),
+                             build_pointer_type(void_type_node));
+  TREE_ADDRESSABLE (ustackptr) = 1;
+  DECL_CONTEXT (ustackptr) = current_function_decl;
+  TREE_USED (ustackptr) = 1;
+  add_local_decl (cfun, ustackptr);
+  tree fn = builtin_decl_explicit (BUILT_IN_MALLOC);
+  ssa_ustackptr = make_ssa_name (ustackptr);
+
+  tree size = build_int_cst (integer_type_node, compute_unsafe_stack_layout());
+  gimple *malloc_stmt = gimple_build_call (fn, 1, size);
+
+  gimple_call_set_lhs (malloc_stmt, ssa_ustackptr);
+  gsi_insert_before (&gsi, malloc_stmt, GSI_SAME_STMT);
+
+  return ssa_ustackptr;
+}
+
+void replace_variables () {
+  tree var;
+  unsigned int i, offset = 0;
+  basic_block bb = ENTRY_BLOCK_PTR_FOR_FN(cfun)->next_bb;
+  gimple_stmt_iterator gsi = gsi_start_bb (bb);
+
+
+  FOR_EACH_LOCAL_DECL(cfun, i, var) {
+    gimple_seq seq = NULL;
+    gimple *stmt = build_type_cast(integer_ptr_type_node, ssa_ustackptr);
+    gimple_seq_add_stmt(&seq, stmt);
+
+    tree mem_ref = fold_build2 (MEM_REF,
+                                TREE_TYPE(TREE_TYPE(gimple_assign_lhs(stmt))),
+                                gimple_assign_lhs(stmt),
+                                build_int_cst (TREE_TYPE(ssa_ustackptr), offset));
+
+    stmt = gimple_build_assign (mem_ref, build_int_cst (integer_type_node, 5));
+    gimple_seq_add_stmt (&seq, stmt);
+
+    gimple_seq_set_location(seq, gimple_location(gsi_stmt(gsi)));
+    gsi_insert_seq_after(&gsi, seq, GSI_SAME_STMT);
+    offset += tree_to_uhwi (DECL_SIZE_UNIT (var));
+  }
+}
 
 /* TODO - extra error checking, NULL types and so on */
 tree insert_pointer_for_array (tree array_size, tree array) {
@@ -113,21 +173,6 @@ tree insert_pointer_for_array (tree array_size, tree array) {
   gimple_call_set_lhs (malloc_stmt, fn_ptr);
   gsi_insert_before (&gsi, malloc_stmt, GSI_SAME_STMT);
 
-#if 0
-  /* Get location to set for the new stmt - source code location apparently */
-  gimple *stmt = gsi_stmt (gsi);
-  location_t loc = gimple_location (stmt);
-
-  gimple_set_location (malloc_stmt, loc);
-  debug_gimple_stmt(malloc_stmt);
-
-  /* test mem_ref() to pointer */
-  tree mem_ref = fold_build2 (MEM_REF, TREE_TYPE(TREE_TYPE (fn_ptr)), fn_ptr,
-                          build_int_cst (TREE_TYPE(fn_ptr), 4));
-
-  gimple *stmt = gimple_build_assign (mem_ref, build_int_cst (integer_type_node, 5));
-  gsi_insert_after (&gsi, stmt, GSI_SAME_STMT);
-#endif
   /* Insert free() */
   gimple_stmt_iterator gsi_end = gsi_last_bb (end_bb);
   tree free_fn = builtin_decl_explicit (BUILT_IN_FREE);
@@ -147,7 +192,7 @@ static void record_array_decl() {
   unsigned int i, nr = 0;
 
   FOR_EACH_LOCAL_DECL(cfun, i, var) {
-   if (!is_global_var(var)) {
+   //if (!is_global_var(var)) {
        tree var_type = TREE_TYPE(var);
        if (TREE_CODE(var) == VAR_DECL &&
            TREE_CODE(var_type) == ARRAY_TYPE ) {
@@ -158,7 +203,7 @@ static void record_array_decl() {
               references->put (var, pointer);
             nr++;
        }
-   }
+   //}
   }
   printf ("--Found %d array type vars\n", nr);
 }
@@ -172,6 +217,7 @@ bool has_array_ref (tree node, gimple *stmt) {
   }
   return false;
 }
+
 
 tree build_mem_ref_on_array (tree node) {
 
@@ -231,7 +277,8 @@ bool replace_array_ref (gimple *stmt, tree node, unsigned int index) {
 static void safestack_instrument ()
 {
   references = new hash_map<tree, tree> ;
-  record_array_decl ();
+
+  record_array_decl  ();
   basic_block bb;
 
   // Could be global
@@ -240,6 +287,8 @@ static void safestack_instrument ()
   check_reference_node ();
   printf ("Number of presumably safe vars: %zd\n", safe_vars->elements());
 
+  allocate_unsafe_stack();
+  replace_variables();
   check_non_ssa_var();
   print_ssa_operands();
   FOR_ALL_BB_FN(bb, cfun) {
